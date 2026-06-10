@@ -50,7 +50,11 @@ def get_customers(territory=None, customer_group=None, limit=100):
         order_by="customer_name asc",
     )
 
-    company = frappe.defaults.get_user_default("company")
+    company = frappe.defaults.get_user_default("company") or (
+        frappe.get_list("Company", limit=1, pluck="name")[0]
+        if frappe.get_list("Company", limit=1)
+        else None
+    )
     for c in customers:
         outstanding = 0
         credit_limit = 0
@@ -699,6 +703,12 @@ def get_visit_targets(limit=100):
 def get_outstanding_amount(customer, company=None):
     if not company:
         company = frappe.defaults.get_user_default("company")
+    if not company:
+        company = (
+            frappe.get_list("Company", limit=1, pluck="name")[0]
+            if frappe.get_list("Company", limit=1)
+            else None
+        )
     if not company:
         return {"outstanding_amount": 0, "credit_limit": 0}
     result = frappe.db.sql("""
