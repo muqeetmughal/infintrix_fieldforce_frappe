@@ -68,11 +68,11 @@ def get_customer_detail(customer):
     credit_limit = 0
 
     if company:
-        outstanding = frappe.db.get_value(
-            "Sales Invoice",
-            {"customer": customer, "docstatus": 1, "company": company, "outstanding_amount": [">", 0]},
-            "sum(outstanding_amount)"
-        ) or 0
+        outstanding = frappe.db.sql("""
+            SELECT COALESCE(SUM(outstanding_amount), 0)
+            FROM `tabSales Invoice`
+            WHERE customer = %s AND docstatus = 1 AND company = %s AND outstanding_amount > 0
+        """, (customer, company))[0][0]
 
         credit_limit = frappe.db.get_value(
             "Customer Credit Limit",
@@ -238,6 +238,18 @@ def submit_payment_entry():
     pe.insert(ignore_permissions=False)
 
     return {"name": pe.name, "party": pe.party, "paid_amount": pe.paid_amount}
+
+
+@frappe.whitelist(allow_guest=False)
+def get_user_info():
+    user = frappe.session.user
+    user_doc = frappe.get_doc("User", user)
+    return {
+        "full_name": user_doc.full_name or user,
+        "username": user,
+        "email": user_doc.email or "",
+        "mobile_no": user_doc.mobile_no or "",
+    }
 
 
 @frappe.whitelist(allow_guest=False)
