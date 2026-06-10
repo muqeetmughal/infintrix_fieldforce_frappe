@@ -214,11 +214,16 @@ def get_dashboard_metrics():
     today_visits = frappe.db.count("Field Visit", {"user": user, "creation": (">=", today)})
     today_orders = frappe.db.count("Sales Order", {"modified_by": user, "transaction_date": today, "docstatus": 1})
 
+    company = frappe.defaults.get_user_default("company")
+    if not company:
+        company = frappe.get_list("Company", limit=1, pluck="name")
+        company = company[0] if company else None
+
     today_collections = frappe.db.sql("""
         SELECT COALESCE(SUM(paid_amount), 0)
         FROM `tabPayment Entry`
-        WHERE modified_by = %s AND posting_date = %s AND docstatus = 1 AND payment_type = 'Receive'
-    """, (user, today))[0][0]
+        WHERE company = %s AND posting_date = %s AND docstatus = 1 AND payment_type = 'Receive'
+    """, (company or "", today))[0][0]
 
     total_outstanding = frappe.db.sql("""
         SELECT COALESCE(SUM(outstanding_amount), 0)
