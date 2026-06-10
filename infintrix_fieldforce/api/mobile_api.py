@@ -324,7 +324,7 @@ def submit_payment_entry():
     pe.posting_date = frappe.utils.today()
     pe.remarks = data.get("remarks", "")
 
-    # Prevent "Target Exchange Rate is mandatory" error
+    pe.source_exchange_rate = 1.0
     pe.target_exchange_rate = 1.0
 
     field_visit = data.get("field_visit")
