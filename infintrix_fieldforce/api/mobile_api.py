@@ -395,34 +395,48 @@ def submit_payment_entry():
     if field_visit:
         pe.custom_field_visit = field_visit
 
-    invoices = frappe.db.sql("""
-        SELECT name, COALESCE(outstanding_amount, 0) AS outstanding
-        FROM `tabSales Invoice`
-        WHERE customer = %s AND company = %s AND docstatus = 1 AND outstanding_amount > 0
-        ORDER BY posting_date ASC, name ASC
-    """, (pe.party, company), as_dict=True)
+    selected_invoices = data.get("invoices", [])
 
-    remaining = flt(pe.paid_amount)
-    for inv in invoices:
-        alloc = min(remaining, inv.outstanding)
-        if alloc <= 0:
-            continue
-        pe.append("references", {
-            "reference_doctype": "Sales Invoice",
-            "reference_name": inv.name,
-            "total_amount": alloc,
-            "outstanding_amount": inv.outstanding,
-            "allocated_amount": alloc,
-        })
-        remaining -= alloc
-        if remaining <= 0:
-            break
+    if selected_invoices:
+        for inv_data in selected_invoices:
+            pe.append("references", {
+                "reference_doctype": "Sales Invoice",
+                "reference_name": inv_data.get("name"),
+                "total_amount": inv_data.get("outstanding_amount", 0),
+                "outstanding_amount": inv_data.get("outstanding_amount", 0),
+                "allocated_amount": inv_data.get("allocated_amount", 0),
+            })
+    else:
+        invoices = frappe.db.sql("""
+            SELECT name, COALESCE(outstanding_amount, 0) AS outstanding
+            FROM `tabSales Invoice`
+            WHERE customer = %s AND company = %s AND docstatus = 1 AND outstanding_amount > 0
+            ORDER BY posting_date ASC, name ASC
+        """, (pe.party, company), as_dict=True)
+
+        remaining = flt(pe.paid_amount)
+        for inv in invoices:
+            alloc = min(remaining, inv.outstanding)
+            if alloc <= 0:
+                continue
+            pe.append("references", {
+                "reference_doctype": "Sales Invoice",
+                "reference_name": inv.name,
+                "total_amount": alloc,
+                "outstanding_amount": inv.outstanding,
+                "allocated_amount": alloc,
+            })
+            remaining -= alloc
+            if remaining <= 0:
+                break
+
+    has_refs = len(pe.get("references", [])) > 0
 
     pe.save(ignore_permissions=False)
-    if invoices:
+    if has_refs:
         pe.submit()
 
-    return {"name": pe.name, "party": pe.party, "paid_amount": pe.paid_amount}
+    return {"name": pe.name, "party": pe.party, "paid_amount": pe.paid_amount, "submitted": has_refs}
 
 
 @frappe.whitelist(allow_guest=False)
@@ -888,6 +902,31 @@ def get_outstanding_amount(customer, company=None):
         "credit_limit"
     ) or 0
     return {"outstanding_amount": outstanding, "credit_limit": credit_limit}
+
+
+@frappe.whitelist(allow_guest=False)
+def get_outstanding_invoices(customer, company=None):
+    if not company:
+        company = frappe.defaults.get_user_default("company")
+    if not company:
+        company = (
+            frappe.get_list("Company", limit=1, pluck="name")[0]
+            if frappe.get_list("Company", limit=1)
+            else None
+        )
+    if not company:
+        return []
+    invoices = frappe.db.sql("""
+        SELECT
+            name,
+            posting_date,
+            COALESCE(outstanding_amount, 0) AS outstanding_amount,
+            COALESCE(grand_total, 0) AS grand_total
+        FROM `tabSales Invoice`
+        WHERE customer = %s AND company = %s AND docstatus = 1 AND outstanding_amount > 0
+        ORDER BY posting_date ASC, name ASC
+    """, (customer, company), as_dict=True)
+    return invoices
 
 
 @frappe.whitelist(allow_guest=False)
