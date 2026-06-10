@@ -311,6 +311,27 @@ def submit_payment_entry():
     if not company:
         frappe.throw(_("No Company found. Please set default company."))
 
+    company_doc = frappe.get_cached_doc("Company", company)
+    currency = company_doc.default_currency
+
+    paid_from = company_doc.default_receivable_account
+    if not paid_from:
+        frappe.throw(_("Default Receivable Account not set for Company {0}").format(company))
+
+    paid_to = data.get("paid_to")
+    if not paid_to:
+        mode_of_payment = data.get("mode_of_payment", "Cash")
+        mode_doc = frappe.get_doc("Mode of Payment", mode_of_payment) if frappe.db.exists("Mode of Payment", mode_of_payment) else None
+        if mode_doc:
+            for acc in mode_doc.accounts:
+                if acc.company == company and acc.default_account:
+                    paid_to = acc.default_account
+                    break
+    if not paid_to:
+        paid_to = company_doc.default_cash_account
+    if not paid_to:
+        frappe.throw(_("No Cash/Bank account found. Set Mode of Payment account or default Cash Account for Company {0}").format(company))
+
     pe = frappe.new_doc("Payment Entry")
     pe.payment_type = "Receive"
     pe.party_type = "Customer"
@@ -324,6 +345,10 @@ def submit_payment_entry():
     pe.posting_date = frappe.utils.today()
     pe.remarks = data.get("remarks", "")
 
+    pe.paid_from = paid_from
+    pe.paid_from_account_currency = currency
+    pe.paid_to = paid_to
+    pe.paid_to_account_currency = currency
     pe.source_exchange_rate = 1.0
     pe.target_exchange_rate = 1.0
 
