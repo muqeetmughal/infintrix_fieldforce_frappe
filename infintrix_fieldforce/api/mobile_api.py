@@ -324,7 +324,7 @@ def get_scheduled_visits():
     """Fetch Field Visit Plans assigned to the logged-in user (via sales_person or employee)."""
     user = frappe.session.user
     employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
-    sales_person = frappe.db.get_value("Sales Person", {"user_id": user}, "name")
+    sales_person = frappe.db.get_value("Sales Person", {"employee": employee}, "name") if employee else ""
     
     filters = [["status", "not in", ["Cancelled"]]]
     if employee:
@@ -358,7 +358,9 @@ def get_today_scheduled_visits():
     user = frappe.session.user
     today = frappe.utils.today()
     employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
-    sales_person = frappe.db.get_value("Sales Person", {"user_id": user}, "name")
+    sales_person = ""
+    if employee:
+        sales_person = frappe.db.get_value("Sales Person", {"employee": employee}, "name")
     
     filters = [
         ["plan_date", "=", today],
