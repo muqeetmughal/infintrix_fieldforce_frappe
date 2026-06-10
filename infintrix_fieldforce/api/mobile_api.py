@@ -24,6 +24,12 @@ def get_visit_types():
 
 
 @frappe.whitelist(allow_guest=False)
+def get_field_types():
+    types = frappe.get_all("Field Type", fields=["name", "field_type_name"], order_by="name asc")
+    return types
+
+
+@frappe.whitelist(allow_guest=False)
 def get_customers(territory=None, customer_group=None, limit=100):
     filters = [["disabled", "=", 0]]
     if territory:
@@ -42,17 +48,40 @@ def get_customers(territory=None, customer_group=None, limit=100):
             "mobile_no",
             "email_id",
             "image",
+            "primary_address",
         ],
         limit_page_length=limit,
         order_by="customer_name asc",
     )
 
+    company = frappe.defaults.get_user_default("company")
     for c in customers:
-        c["outstanding_amount"] = frappe.db.get_value(
-            "Customer Credit Limit",
-            {"parenttype": "Customer", "parent": c["name"]},
-            "company"
-        ) or 0
+        outstanding = 0
+        credit_limit = 0
+        if company:
+            result = frappe.db.sql("""
+                SELECT COALESCE(SUM(outstanding_amount), 0)
+                FROM `tabSales Invoice`
+                WHERE customer = %s AND docstatus = 1 AND company = %s AND outstanding_amount > 0
+            """, (c["name"], company))
+            outstanding = result[0][0] if result else 0
+
+            credit_limit = frappe.db.get_value(
+                "Customer Credit Limit",
+                {"parent": c["name"], "company": company},
+                "credit_limit"
+            ) or 0
+
+        c["outstanding_amount"] = outstanding
+        c["credit_limit"] = credit_limit
+
+        last_visit = frappe.db.get_value(
+            "Field Visit",
+            {"customer": c["name"], "docstatus": 0},
+            "creation",
+            order_by="creation desc"
+        )
+        c["last_visit_date"] = str(last_visit.date()) if last_visit else None
 
     return customers
 
@@ -68,11 +97,12 @@ def get_customer_detail(customer):
     credit_limit = 0
 
     if company:
-        outstanding = frappe.db.sql("""
+        result = frappe.db.sql("""
             SELECT COALESCE(SUM(outstanding_amount), 0)
             FROM `tabSales Invoice`
             WHERE customer = %s AND docstatus = 1 AND company = %s AND outstanding_amount > 0
-        """, (customer, company))[0][0]
+        """, (customer, company))
+        outstanding = result[0][0] if result else 0
 
         credit_limit = frappe.db.get_value(
             "Customer Credit Limit",
@@ -131,6 +161,15 @@ def get_items(limit=100):
         limit_page_length=limit,
         order_by="item_name asc",
     )
+
+    for item in items:
+        actual_qty = frappe.db.get_value(
+            "Bin",
+            {"item_code": item["name"]},
+            "actual_qty"
+        )
+        item["actual_qty"] = actual_qty or 0
+
     return items
 
 
@@ -142,17 +181,17 @@ def get_dashboard_metrics():
     today_visits = frappe.db.count("Field Visit", {"visited_by": user, "visit_date": today})
     today_orders = frappe.db.count("Sales Order", {"modified_by": user, "transaction_date": today, "docstatus": 1})
 
-    today_collections = frappe.db.get_value(
-        "Payment Entry",
-        {"modified_by": user, "posting_date": today, "docstatus": 1, "payment_type": "Receive"},
-        "sum(paid_amount)"
-    ) or 0
+    today_collections = frappe.db.sql("""
+        SELECT COALESCE(SUM(paid_amount), 0)
+        FROM `tabPayment Entry`
+        WHERE modified_by = %s AND posting_date = %s AND docstatus = 1 AND payment_type = 'Receive'
+    """, (user, today))[0][0]
 
-    total_outstanding = frappe.db.get_value(
-        "Sales Invoice",
-        {"docstatus": 1, "outstanding_amount": [">", 0]},
-        "sum(outstanding_amount)"
-    ) or 0
+    total_outstanding = frappe.db.sql("""
+        SELECT COALESCE(SUM(outstanding_amount), 0)
+        FROM `tabSales Invoice`
+        WHERE docstatus = 1 AND outstanding_amount > 0
+    """)[0][0]
 
     return {
         "today_visits_count": today_visits,
@@ -166,24 +205,41 @@ def get_dashboard_metrics():
 def submit_field_visit():
     data = json.loads(frappe.request.data or "{}")
 
-    visit_type = data.get("visit_type")
-    if visit_type and not frappe.db.exists("Visit Type", visit_type):
-        vt = frappe.new_doc("Visit Type")
-        vt.visit_type_name = visit_type
-        vt.insert()
-
     visit = frappe.new_doc("Field Visit")
     visit.customer = data.get("customer")
-    visit.visit_type = visit_type
+    visit.visit_type = data.get("visit_type")
+    visit.visit_status = data.get("visit_status", "Checked In")
     visit.remarks = data.get("remarks", "")
     visit.gps_latitude = data.get("gps_latitude")
     visit.gps_longitude = data.get("gps_longitude")
     visit.next_followup_date = data.get("next_followup_date")
     visit.attachment = data.get("attachment")
+    visit.visited_by = frappe.session.user
 
     visit.insert(ignore_permissions=False)
 
     return {"name": visit.name, "customer": visit.customer, "visit_type": visit.visit_type}
+
+
+@frappe.whitelist(allow_guest=False)
+def update_field_visit():
+    data = json.loads(frappe.request.data or "{}")
+
+    visit_name = data.get("visit_name")
+    if not visit_name:
+        frappe.throw(_("visit_name is required"))
+
+    visit = frappe.get_doc("Field Visit", visit_name)
+    visit.visit_status = data.get("visit_status", "Completed")
+    visit.remarks = data.get("remarks") or visit.remarks
+    visit.next_followup_date = data.get("next_followup_date") or visit.next_followup_date
+    visit.check_out_latitude = data.get("check_out_latitude")
+    visit.check_out_longitude = data.get("check_out_longitude")
+    visit.check_out_time = data.get("check_out_time")
+
+    visit.save(ignore_permissions=False)
+
+    return {"name": visit.name, "customer": visit.customer, "visit_status": visit.visit_status}
 
 
 @frappe.whitelist(allow_guest=False)
@@ -205,6 +261,10 @@ def submit_sales_order():
             "rate": item.get("rate", 0),
             "delivery_date": data.get("delivery_date"),
         })
+
+    field_visit = data.get("field_visit")
+    if field_visit:
+        so.custom_field_visit = field_visit
 
     so.insert(ignore_permissions=False)
 
@@ -234,6 +294,10 @@ def submit_payment_entry():
     pe.reference_date = data.get("reference_date") or frappe.utils.today()
     pe.posting_date = frappe.utils.today()
     pe.remarks = data.get("remarks", "")
+
+    field_visit = data.get("field_visit")
+    if field_visit:
+        pe.custom_field_visit = field_visit
 
     pe.insert(ignore_permissions=False)
 
