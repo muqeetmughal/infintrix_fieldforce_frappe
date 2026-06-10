@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
- "autoname": "format:FLD-.YY.-.#####",
+ "autoname": "hash",
  "creation": "2026-06-09 20:25:57.700368",
  "default_view": "List",
  "doctype": "DocType",

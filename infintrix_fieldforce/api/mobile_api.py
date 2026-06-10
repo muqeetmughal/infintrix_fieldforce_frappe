@@ -205,6 +205,12 @@ def get_dashboard_metrics():
 def submit_field_visit():
     data = json.loads(frappe.request.data or "{}")
 
+    offline_id = data.get("offline_record_id", "")
+    if offline_id:
+        existing = frappe.db.get_value("Field Visit", {"offline_record_id": offline_id}, "name")
+        if existing:
+            return {"name": existing, "party_type": data.get("party_type"), "party": data.get("party"), "party_name": data.get("party_name"), "duplicate": True}
+
     visit = frappe.new_doc("Field Visit")
     visit.party_type = data.get("party_type", "Customer")
     visit.party = data.get("party") or data.get("customer")
@@ -531,10 +537,8 @@ def get_user_info():
 def _get_sales_person_for_user(user=None):
     """Map user -> Employee -> Sales Person using standard DocTypes."""
     user = user or frappe.session.user
-    sales_person = frappe.db.get_value("Sales Person", {"user_id": user}, "name")
-    if sales_person:
-        return sales_person
     employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    sales_person = ""
     if employee:
         sales_person = frappe.db.get_value("Sales Person", {"employee": employee}, "name")
     return sales_person or ""
@@ -693,6 +697,67 @@ def get_outstanding_amount(customer, company=None):
         "credit_limit"
     ) or 0
     return {"outstanding_amount": outstanding, "credit_limit": credit_limit}
+
+
+@frappe.whitelist(allow_guest=False)
+def get_sync_updates():
+    """Pull changes from server since last_sync timestamp for two-way sync."""
+    data = json.loads(frappe.request.data or "{}")
+    since = data.get("since") or frappe.utils.add_days(frappe.utils.now(), -7)
+    user = frappe.session.user
+    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    sales_person = frappe.db.get_value("Sales Person", {"employee": employee}, "name") if employee else ""
+
+    sync_filters = [["modified", ">=", since]]
+    plan_filters = [["modified", ">=", since]]
+    if employee:
+        sync_filters.append(["employee", "=", employee])
+        plan_filters.append(["employee", "=", employee])
+    if sales_person:
+        sync_filters.append(["sales_person", "=", sales_person])
+        plan_filters.append(["sales_person", "=", sales_person])
+
+    visits = frappe.get_all(
+        "Field Visit",
+        filters=sync_filters,
+        fields=[
+            "name", "party_type", "party", "party_name",
+            "customer", "lead", "opportunity", "supplier",
+            "contact_person", "contact_mobile", "address", "territory",
+            "field_type", "sales_person", "employee", "user",
+            "field_visit_plan", "visit_status", "visit_purpose",
+            "visit_outcome", "remarks", "next_follow_up_date",
+            "check_in_latitude", "check_in_longitude", "check_in_time", "check_in_address",
+            "check_out_latitude", "check_out_longitude", "check_out_time", "check_out_address",
+            "created_from_mobile", "offline_record_id", "sync_status",
+            "creation", "modified",
+        ],
+        order_by="modified desc",
+        limit_page_length=100,
+    )
+
+    plans = frappe.get_all(
+        "Field Visit Plan",
+        filters=plan_filters + [["status", "not in", ["Cancelled"]]],
+        fields=[
+            "name", "plan_date", "company", "sales_person", "employee",
+            "party_type", "party", "party_name",
+            "customer", "lead", "opportunity", "supplier",
+            "contact_mobile", "address", "territory", "route",
+            "field_type", "priority", "planned_start_time", "planned_end_time",
+            "visit_purpose", "status", "actual_field_visit",
+            "assigned_by", "assigned_on", "remarks",
+            "creation", "modified",
+        ],
+        order_by="modified desc",
+        limit_page_length=100,
+    )
+
+    return {
+        "visits": visits,
+        "plans": plans,
+        "server_time": frappe.utils.now(),
+    }
 
 
 @frappe.whitelist(allow_guest=False)
