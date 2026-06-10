@@ -143,6 +143,7 @@ def get_customer_detail(customer):
         "territory": customer_doc.get("territory") or "",
         "customer_group": customer_doc.get("customer_group") or "",
         "primary_address": customer_doc.get("primary_address") or "",
+        "image": customer_doc.get("image") or "",
         "outstanding_amount": outstanding,
         "credit_limit": credit_limit,
         "currency": currency,
@@ -599,6 +600,30 @@ def _get_user_info_dict(user):
         "employee": employee or "",
         "company": company,
         "default_currency": default_currency or "USD",
+        "user_image": user_doc.user_image or "",
+    }
+
+
+@frappe.whitelist(allow_guest=False)
+def get_doctype_schema():
+    """Return field definitions (fieldname, label, reqd, fieldtype, options) for any DocType."""
+    data = json.loads(frappe.request.data or "{}")
+    doctype = data.get("doctype")
+    if not doctype:
+        frappe.throw(_("doctype parameter is required"))
+    meta = frappe.get_meta(doctype)
+    fields = []
+    for df in meta.fields:
+        fields.append({
+            "fieldname": df.fieldname,
+            "label": df.label,
+            "reqd": df.reqd or 0,
+            "fieldtype": df.fieldtype,
+            "options": df.options or "",
+        })
+    return {
+        "doctype": doctype,
+        "fields": fields,
     }
 
 
