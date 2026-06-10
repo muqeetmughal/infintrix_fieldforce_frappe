@@ -25,8 +25,8 @@ def get_visit_types():
 
 @frappe.whitelist(allow_guest=False)
 def get_field_types():
-    types = frappe.get_all("Field Type", fields=["name", "field_type_name"], order_by="name asc")
-    return types
+    types = frappe.get_all("Visit Type", fields=["name"], order_by="name asc")
+    return [{"name": t["name"], "field_type_name": t["name"]} for t in types]
 
 
 @frappe.whitelist(allow_guest=False)
@@ -208,7 +208,7 @@ def submit_field_visit():
     visit = frappe.new_doc("Field Visit")
     visit.customer = data.get("customer")
     visit.visit_type = data.get("visit_type")
-    visit.visit_status = data.get("visit_status", "Checked In")
+    visit.status = data.get("visit_status", "Checked In")
     visit.remarks = data.get("remarks", "")
     visit.gps_latitude = data.get("gps_latitude")
     visit.gps_longitude = data.get("gps_longitude")
@@ -230,16 +230,17 @@ def update_field_visit():
         frappe.throw(_("visit_name is required"))
 
     visit = frappe.get_doc("Field Visit", visit_name)
-    visit.visit_status = data.get("visit_status", "Completed")
+    visit.status = data.get("visit_status", "Completed")
     visit.remarks = data.get("remarks") or visit.remarks
     visit.next_followup_date = data.get("next_followup_date") or visit.next_followup_date
-    visit.check_out_latitude = data.get("check_out_latitude")
-    visit.check_out_longitude = data.get("check_out_longitude")
-    visit.check_out_time = data.get("check_out_time")
+    if data.get("check_out_latitude"):
+        visit.gps_latitude = data.get("check_out_latitude")
+    if data.get("check_out_longitude"):
+        visit.gps_longitude = data.get("check_out_longitude")
 
     visit.save(ignore_permissions=False)
 
-    return {"name": visit.name, "customer": visit.customer, "visit_status": visit.visit_status}
+    return {"name": visit.name, "customer": visit.customer, "status": visit.status}
 
 
 @frappe.whitelist(allow_guest=False)
