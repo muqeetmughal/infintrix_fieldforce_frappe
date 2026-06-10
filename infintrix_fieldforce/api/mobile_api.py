@@ -7,13 +7,9 @@ import json
 def login():
     user = frappe.session.user
     if user and user != "Guest":
-        user_doc = frappe.get_doc("User", user)
-        return {
-            "message": "Logged in",
-            "full_name": user_doc.full_name,
-            "username": user,
-            "email": user_doc.email,
-        }
+        info = _get_user_info_dict(user)
+        info["message"] = "Logged in"
+        return info
     frappe.throw(_("Invalid credentials"), frappe.AuthenticationError)
 
 
@@ -368,20 +364,12 @@ def get_today_scheduled_visits():
     if employee:
         sales_person = frappe.db.get_value("Sales Person", {"employee": employee}, "name")
     
-    filters = [
-        ["plan_date", "=", today],
-        ["status", "not in", ["Cancelled", "Completed"]],
-    ]
-    if employee:
-        filters.append(["employee", "=", employee])
-    if sales_person:
-        filters.append(["sales_person", "=", sales_person])
-    if not employee and not sales_person:
-        filters.append(["assigned_by", "=", user])
-    
     plans = frappe.get_all(
         "Field Visit Plan",
-        filters=filters,
+        filters=[
+            ["plan_date", "=", today],
+            ["status", "not in", ["Cancelled", "Completed"]],
+        ],
         fields=[
             "name", "plan_date", "company", "sales_person", "employee",
             "party_type", "party", "party_name",
@@ -393,9 +381,20 @@ def get_today_scheduled_visits():
             "assigned_by", "assigned_on", "remarks",
         ],
         order_by="planned_start_time asc",
-        limit_page_length=20,
+        limit_page_length=100,
     )
-    return plans
+
+    # Post-filter: plan belongs to user if employee matches, sales_person matches, or assigned_by matches
+    def _is_assigned(plan):
+        if employee and plan.get("employee") == employee:
+            return True
+        if sales_person and plan.get("sales_person") == sales_person:
+            return True
+        if plan.get("assigned_by") == user:
+            return True
+        return False
+
+    return [p for p in plans if _is_assigned(p)]
 
 
 @frappe.whitelist(allow_guest=False)
@@ -523,15 +522,32 @@ def get_customer_groups():
 
 
 @frappe.whitelist(allow_guest=False)
-def get_user_info():
-    user = frappe.session.user
+def _get_user_info_dict(user):
+    """Return enriched user info dict used by login() and get_user_info()."""
     user_doc = frappe.get_doc("User", user)
+    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    company = ""
+    default_currency = ""
+    if employee:
+        company = frappe.db.get_value("Employee", employee, "company") or ""
+    if not company:
+        company = frappe.defaults.get_user_default("company") or ""
+    if company:
+        default_currency = frappe.db.get_value("Company", company, "default_currency") or ""
     return {
         "full_name": user_doc.full_name or user,
         "username": user,
         "email": user_doc.email or "",
         "mobile_no": user_doc.mobile_no or "",
+        "employee": employee or "",
+        "company": company,
+        "default_currency": default_currency or "USD",
     }
+
+
+@frappe.whitelist(allow_guest=False)
+def get_user_info():
+    return _get_user_info_dict(frappe.session.user)
 
 
 def _get_sales_person_for_user(user=None):
