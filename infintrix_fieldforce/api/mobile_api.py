@@ -77,7 +77,31 @@ def get_field_types():
 
 @frappe.whitelist(allow_guest=False)
 def get_customers(territory=None, customer_group=None, limit=100):
-    filters = [["disabled", "=", 0]]
+    user = frappe.session.user
+    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    sales_person = frappe.db.get_value("Sales Person", {"employee": employee}, "name") if employee else ""
+
+    plan_filters = [["status", "not in", ["Cancelled"]]]
+    if employee:
+        plan_filters.append(["employee", "=", employee])
+    if sales_person:
+        plan_filters.append(["sales_person", "=", sales_person])
+    if not employee and not sales_person:
+        plan_filters.append(["assigned_by", "=", user])
+
+    assigned_customers = frappe.get_all(
+        "Field Visit Plan",
+        filters=plan_filters + [["party_type", "=", "Customer"]],
+        fields=["party"],
+        distinct=True,
+        pluck="party",
+    )
+    assigned_customers = [c for c in assigned_customers if c]
+
+    if not assigned_customers:
+        return []
+
+    filters = [["disabled", "=", 0], ["name", "in", assigned_customers]]
     if territory:
         filters.append(["territory", "=", territory])
     if customer_group:
@@ -233,36 +257,76 @@ def get_dashboard_metrics():
     today = frappe.utils.today()
 
     today_visits = frappe.db.count("Field Visit", {"user": user, "creation": (">=", today)})
-    today_orders = frappe.db.count("Sales Order", {"modified_by": user, "transaction_date": today, "docstatus": 1})
+
+    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    sales_person = frappe.db.get_value("Sales Person", {"employee": employee}, "name") if employee else ""
+
+    plan_filters = [["status", "not in", ["Cancelled"]]]
+    if employee:
+        plan_filters.append(["employee", "=", employee])
+    if sales_person:
+        plan_filters.append(["sales_person", "=", sales_person])
+    if not employee and not sales_person:
+        plan_filters.append(["assigned_by", "=", user])
+
+    assigned_customers = frappe.get_all(
+        "Field Visit Plan",
+        filters=plan_filters + [["party_type", "=", "Customer"]],
+        fields=["party"],
+        distinct=True,
+        pluck="party",
+    )
+    assigned_customers = [c for c in assigned_customers if c]
+
+    if not assigned_customers:
+        return {
+            "today_visits_count": today_visits,
+            "today_orders_count": 0,
+            "today_collections_amount": 0,
+            "total_outstanding_amount": 0,
+            "total_invoice_outstanding_amount": 0,
+        }
 
     company = frappe.defaults.get_user_default("company")
     if not company:
         company = frappe.get_list("Company", limit=1, pluck="name")
         company = company[0] if company else None
 
+    customers_filter = tuple(assigned_customers)
+
+    today_orders = frappe.db.sql("""
+        SELECT COALESCE(COUNT(*), 0)
+        FROM `tabSales Order`
+        WHERE customer IN %s AND transaction_date = %s AND docstatus = 1
+    """, (customers_filter, today))[0][0]
+
     today_collections = frappe.db.sql("""
         SELECT COALESCE(SUM(paid_amount), 0)
         FROM `tabPayment Entry`
-        WHERE company = %s AND posting_date = %s AND docstatus = 1 AND payment_type = 'Receive'
-    """, (company or "", today))[0][0]
+        WHERE company = %s AND posting_date = %s AND docstatus = 1
+          AND payment_type = 'Receive' AND party IN %s
+    """, (company or "", today, customers_filter))[0][0]
 
     total_outstanding = frappe.db.sql("""
         SELECT COALESCE(SUM(outstanding_amount), 0)
         FROM `tabSales Invoice`
-        WHERE docstatus = 1 AND outstanding_amount > 0
-    """)[0][0]
+        WHERE customer IN %s AND docstatus = 1 AND outstanding_amount > 0
+    """, (customers_filter,))[0][0]
 
     total_unallocated = frappe.db.sql("""
         SELECT COALESCE(SUM(unallocated_amount), 0)
         FROM `tabPayment Entry`
-        WHERE docstatus = 1 AND party_type = 'Customer' AND unallocated_amount > 0
-    """)[0][0]
+        WHERE docstatus = 1 AND payment_type = 'Receive'
+          AND party_type = 'Customer' AND unallocated_amount > 0
+          AND party IN %s
+    """, (customers_filter,))[0][0]
 
     return {
         "today_visits_count": today_visits,
         "today_orders_count": today_orders,
         "today_collections_amount": today_collections,
         "total_outstanding_amount": flt(total_outstanding - total_unallocated),
+        "total_invoice_outstanding_amount": flt(total_outstanding),
     }
 
 
@@ -326,6 +390,46 @@ def update_field_visit():
     visit.save(ignore_permissions=False)
 
     return {"name": visit.name, "party_type": visit.party_type, "party": visit.party, "visit_status": visit.visit_status}
+
+
+@frappe.whitelist(allow_guest=False)
+def get_sales_orders(customer=None, limit=50):
+    filters = [["docstatus", "!=", 2], ["owner", "=", frappe.session.user]]
+    if customer:
+        filters.append(["customer", "=", customer])
+    orders = frappe.get_all(
+        "Sales Order",
+        filters=filters,
+        fields=["name", "customer", "transaction_date", "delivery_date", "grand_total", "status", "docstatus"],
+        limit_page_length=limit,
+        order_by="transaction_date desc",
+    )
+    return orders
+
+
+@frappe.whitelist(allow_guest=False)
+def get_sales_order_detail(sales_order):
+    doc = frappe.get_doc("Sales Order", sales_order)
+    items = []
+    for item in doc.get("items", []):
+        items.append({
+            "item_code": item.item_code,
+            "item_name": item.item_name,
+            "qty": item.qty,
+            "rate": item.rate,
+            "amount": item.amount,
+        })
+    return {
+        "name": doc.name,
+        "customer": doc.customer,
+        "transaction_date": str(doc.transaction_date) if doc.transaction_date else "",
+        "delivery_date": str(doc.delivery_date) if doc.delivery_date else "",
+        "grand_total": doc.grand_total,
+        "status": doc.status,
+        "docstatus": doc.docstatus,
+        "items": items,
+        "remarks": doc.remarks or "",
+    }
 
 
 @frappe.whitelist(allow_guest=False)
@@ -948,7 +1052,15 @@ def get_customer_ledger(customer, company=None):
             against_voucher,
             remarks
         FROM `tabGL Entry`
-        WHERE party_type = 'Customer' AND party = %s AND company = %s AND is_cancelled = 0
+        WHERE party_type = 'Customer' AND party = %s AND company = %s
+          AND is_cancelled = 0
+          AND (voucher_type, voucher_no) NOT IN (
+              SELECT 'Sales Invoice', name FROM `tabSales Invoice` WHERE docstatus = 2
+              UNION ALL
+              SELECT 'Payment Entry', name FROM `tabPayment Entry` WHERE docstatus = 2
+              UNION ALL
+              SELECT 'Journal Entry', name FROM `tabJournal Entry` WHERE docstatus = 2
+          )
         ORDER BY posting_date DESC, creation DESC
     """, (customer, company), as_dict=True)
     return entries
