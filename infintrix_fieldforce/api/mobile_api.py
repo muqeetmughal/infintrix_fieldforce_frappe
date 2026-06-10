@@ -889,6 +889,26 @@ def get_sync_updates():
 
 
 @frappe.whitelist(allow_guest=False)
+def get_private_file():
+    """Return private file content as a data URI for mobile consumption."""
+    data = json.loads(frappe.request.data or "{}")
+    file_url = data.get("file_url")
+    if not file_url:
+        frappe.throw(_("file_url is required"))
+    file_doc = frappe.db.get_value("File", {"file_url": file_url}, ["name", "file_name", "content_type"], as_dict=True)
+    if not file_doc:
+        frappe.throw(_("File not found"))
+    content = frappe.get_doc("File", file_doc["name"]).get_content()
+    import base64
+    encoded = base64.b64encode(content).decode("utf-8")
+    content_type = file_doc.get("content_type") or "image/png"
+    return {
+        "data_uri": f"data:{content_type};base64,{encoded}",
+        "file_name": file_doc.get("file_name", ""),
+    }
+
+
+@frappe.whitelist(allow_guest=False)
 def get_modes_of_payment():
     modes = frappe.get_all("Mode of Payment", fields=["name"], order_by="name asc")
     return [m["name"] for m in modes]
