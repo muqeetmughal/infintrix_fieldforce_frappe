@@ -197,7 +197,9 @@ def get_customer_detail(customer):
 
 
 @frappe.whitelist(allow_guest=False)
-def get_items(limit=100):
+def get_items(limit=100, price_list=None):
+    if not price_list:
+        price_list = "Standard Selling"
     items = frappe.get_all(
         "Item",
         filters=[["disabled", "=", 0], ["is_sales_item", "=", 1]],
@@ -213,6 +215,14 @@ def get_items(limit=100):
             "actual_qty"
         )
         item["actual_qty"] = actual_qty or 0
+
+        if not item.get("standard_rate") or item["standard_rate"] == 0:
+            ip = frappe.db.get_value(
+                "Item Price",
+                {"item_code": item["name"], "price_list": price_list, "selling": 1},
+                "price_list_rate"
+            )
+            item["standard_rate"] = ip or 0
 
     return items
 
