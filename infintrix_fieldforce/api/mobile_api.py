@@ -889,5 +889,11 @@ def get_sync_updates():
 
 
 @frappe.whitelist(allow_guest=False)
+def get_modes_of_payment():
+    modes = frappe.get_all("Mode of Payment", fields=["name"], order_by="name asc")
+    return [m["name"] for m in modes]
+
+
+@frappe.whitelist(allow_guest=False)
 def ping():
     return {"message": "pong", "user": frappe.session.user}
