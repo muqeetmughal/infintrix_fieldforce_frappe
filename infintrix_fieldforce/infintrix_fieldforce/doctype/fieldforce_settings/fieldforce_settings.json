@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "beta": 0,
+ "creation": "2026-06-11 10:00:00.000000",
+ "default_view": "Single",
+ "doctype": "DocType",
+ "document_type": "",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "mobile_config_tab",
+  "mobile_company",
+  "mobile_currency",
+  "allow_offline_mode",
+  "enable_gps_tracking",
+  "sync_interval_minutes",
+  "max_image_size_mb",
+  "section_break_end"
+ ],
+ "fields": [
+  {
+   "collapsible": 0,
+   "fieldname": "mobile_config_tab",
+   "fieldtype": "Tab Break",
+   "label": "Mobile Configuration"
+  },
+  {
+   "fieldname": "mobile_company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Default Company (Mobile)",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "mobile_company.default_currency",
+   "fieldname": "mobile_currency",
+   "fieldtype": "Read Only",
+   "in_list_view": 1,
+   "label": "Currency (from Company)",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "allow_offline_mode",
+   "fieldtype": "Check",
+   "label": "Allow Offline Mode"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_gps_tracking",
+   "fieldtype": "Check",
+   "label": "Enable GPS Tracking"
+  },
+  {
+   "default": "15",
+   "fieldname": "sync_interval_minutes",
+   "fieldtype": "Int",
+   "label": "Auto Sync Interval (Minutes)"
+  },
+  {
+   "default": "5",
+   "fieldname": "max_image_size_mb",
+   "fieldtype": "Int",
+   "label": "Max Image Size (MB)"
+  },
+  {
+   "fieldname": "section_break_end",
+   "fieldtype": "Section Break"
+  }
+ ],
+ "has_web_view": 0,
+ "hide_toolbar": 0,
+ "idx": 0,
+ "in_create": 0,
+ "is_submittable": 0,
+ "issingle": 1,
+ "istable": 0,
+ "max_attachments": 0,
+ "modified": "2026-06-11 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infintrix Fieldforce",
+ "name": "FieldForce Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "All",
+   "share": 1,
+   "write": 0
+  }
+ ],
+ "quick_entry": 1,
+ "read_only": 0,
+ "show_name_in_global_search": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1,
+ "track_seen": 0,
+ "track_views": 0
+}

@@ -296,7 +296,15 @@ def submit_sales_order():
 def submit_payment_entry():
     data = json.loads(frappe.request.data or "{}")
 
-    company = frappe.defaults.get_user_default("company")
+    company = data.get("company") or ""
+    if not company:
+        try:
+            settings = frappe.get_single("FieldForce Settings")
+            company = settings.get("mobile_company") or ""
+        except Exception:
+            pass
+    if not company:
+        company = frappe.defaults.get_user_default("company")
     if not company:
         companies = frappe.get_list("Company", limit=1, pluck="name")
         company = companies[0] if companies else None
@@ -315,6 +323,9 @@ def submit_payment_entry():
     pe.reference_date = data.get("reference_date") or frappe.utils.today()
     pe.posting_date = frappe.utils.today()
     pe.remarks = data.get("remarks", "")
+
+    # Prevent "Target Exchange Rate is mandatory" error
+    pe.target_exchange_rate = 1.0
 
     field_visit = data.get("field_visit")
     if field_visit:
@@ -530,14 +541,31 @@ def _get_user_info_dict(user):
     """Return enriched user info dict used by login() and get_user_info()."""
     user_doc = frappe.get_doc("User", user)
     employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+
     company = ""
     default_currency = ""
-    if employee:
+    try:
+        settings = frappe.get_single("FieldForce Settings")
+        company = settings.get("mobile_company") or ""
+        default_currency = settings.get("mobile_currency") or ""
+    except Exception:
+        pass
+
+    if not company and employee:
         company = frappe.db.get_value("Employee", employee, "company") or ""
     if not company:
         company = frappe.defaults.get_user_default("company") or ""
-    if company:
+    if not company:
+        company = (
+            frappe.get_list("Company", limit=1, pluck="name")[0]
+            if frappe.get_list("Company", limit=1)
+            else ""
+        )
+    if not default_currency and company:
         default_currency = frappe.db.get_value("Company", company, "default_currency") or ""
+    if not default_currency:
+        default_currency = frappe.defaults.get_user_default("currency") or ""
+
     return {
         "full_name": user_doc.full_name or user,
         "username": user,
@@ -547,6 +575,30 @@ def _get_user_info_dict(user):
         "company": company,
         "default_currency": default_currency or "USD",
     }
+
+
+@frappe.whitelist(allow_guest=False)
+def get_mobile_config():
+    """Return mobile configuration from FieldForce Settings."""
+    try:
+        settings = frappe.get_single("FieldForce Settings")
+        return {
+            "mobile_company": settings.mobile_company or "",
+            "mobile_currency": settings.mobile_currency or "USD",
+            "allow_offline_mode": settings.allow_offline_mode or 1,
+            "enable_gps_tracking": settings.enable_gps_tracking or 1,
+            "sync_interval_minutes": settings.sync_interval_minutes or 15,
+            "max_image_size_mb": settings.max_image_size_mb or 5,
+        }
+    except Exception:
+        return {
+            "mobile_company": "",
+            "mobile_currency": "USD",
+            "allow_offline_mode": 1,
+            "enable_gps_tracking": 1,
+            "sync_interval_minutes": 15,
+            "max_image_size_mb": 5,
+        }
 
 
 @frappe.whitelist(allow_guest=False)
