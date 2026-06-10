@@ -3,6 +3,35 @@ from frappe import _
 import json
 
 
+def _resolve_image(file_url):
+    """Convert a private file path to a data URI, or return public path as-is."""
+    if not file_url:
+        return ""
+    if file_url.startswith("http") or file_url.startswith("data:"):
+        return file_url
+    if not file_url.startswith("/private"):
+        return file_url
+    try:
+        file_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+        if not file_name:
+            file_name = frappe.db.get_value("File", {"file_url": file_url.lstrip("/")}, "name")
+        if not file_name:
+            frappe.log_error(f"File not found for URL: {file_url}", "mobile_api._resolve_image")
+            return file_url
+        file_doc = frappe.get_doc("File", file_name)
+        raw = file_doc.get_content()
+        import base64
+        if isinstance(raw, str):
+            encoded = base64.b64encode(raw.encode("utf-8")).decode("utf-8")
+        else:
+            encoded = base64.b64encode(raw).decode("utf-8")
+        content_type = file_doc.get("content_type") or "image/png"
+        return f"data:{content_type};base64,{encoded}"
+    except Exception as e:
+        frappe.log_error(f"Failed to resolve image {file_url}: {e}", "mobile_api._resolve_image")
+        return file_url
+
+
 @frappe.whitelist(allow_guest=False)
 def login():
     user = frappe.session.user
@@ -83,6 +112,8 @@ def get_customers(territory=None, customer_group=None, limit=100):
         )
         c["last_visit_date"] = str(last_visit.date()) if last_visit else None
 
+        c["image"] = _resolve_image(c.get("image"))
+
     return customers
 
 
@@ -143,8 +174,9 @@ def get_customer_detail(customer):
         "territory": customer_doc.get("territory") or "",
         "customer_group": customer_doc.get("customer_group") or "",
         "primary_address": customer_doc.get("primary_address") or "",
-        "image": customer_doc.get("image") or "",
+        "image": _resolve_image(customer_doc.get("image")),
         "outstanding_amount": outstanding,
+        "credit_limit": credit_limit,
         "credit_limit": credit_limit,
         "currency": currency,
         "recent_orders": recent_orders,
@@ -600,7 +632,7 @@ def _get_user_info_dict(user):
         "employee": employee or "",
         "company": company,
         "default_currency": default_currency or "USD",
-        "user_image": user_doc.user_image or "",
+        "user_image": _resolve_image(user_doc.user_image or ""),
     }
 
 
