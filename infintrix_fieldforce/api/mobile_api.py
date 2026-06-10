@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import flt
 import json
 
 
@@ -394,7 +395,32 @@ def submit_payment_entry():
     if field_visit:
         pe.custom_field_visit = field_visit
 
-    pe.insert(ignore_permissions=False)
+    invoices = frappe.db.sql("""
+        SELECT name, COALESCE(outstanding_amount, 0) AS outstanding
+        FROM `tabSales Invoice`
+        WHERE customer = %s AND company = %s AND docstatus = 1 AND outstanding_amount > 0
+        ORDER BY posting_date ASC, name ASC
+    """, (pe.party, company), as_dict=True)
+
+    remaining = flt(pe.paid_amount)
+    for inv in invoices:
+        alloc = min(remaining, inv.outstanding)
+        if alloc <= 0:
+            continue
+        pe.append("references", {
+            "reference_doctype": "Sales Invoice",
+            "reference_name": inv.name,
+            "total_amount": alloc,
+            "outstanding_amount": inv.outstanding,
+            "allocated_amount": alloc,
+        })
+        remaining -= alloc
+        if remaining <= 0:
+            break
+
+    pe.save(ignore_permissions=False)
+    if invoices:
+        pe.submit()
 
     return {"name": pe.name, "party": pe.party, "paid_amount": pe.paid_amount}
 
