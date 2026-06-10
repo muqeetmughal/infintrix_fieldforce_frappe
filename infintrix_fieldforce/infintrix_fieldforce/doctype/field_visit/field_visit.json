@@ -8,73 +8,164 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "party_type",
+  "party",
+  "party_name",
   "customer",
-  "visit_type",
-  "visit_date",
-  "visited_by",
-  "status",
-  "gps_latitude",
-  "gps_longitude",
+  "lead",
+  "opportunity",
+  "supplier",
+  "contact_person",
+  "contact_mobile",
+  "address",
+  "territory",
+  "field_type",
+  "sales_person",
+  "employee",
+  "user",
+  "field_visit_plan",
+  "visit_status",
+  "visit_purpose",
+  "visit_outcome",
   "remarks",
-  "attachment",
-  "next_followup_date",
-  "status_section",
-  "gps_section",
-  "details_section"
+  "next_follow_up_date",
+  "check_in_section",
+  "check_in_latitude",
+  "check_in_longitude",
+  "check_in_time",
+  "check_in_address",
+  "check_out_section",
+  "check_out_latitude",
+  "check_out_longitude",
+  "check_out_time",
+  "check_out_address",
+  "mobile_section",
+  "created_from_mobile",
+  "offline_record_id",
+  "sync_status",
+  "sync_error"
  ],
  "fields": [
   {
-   "fieldname": "customer",
-   "fieldtype": "Link",
+   "fieldname": "party_type",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Customer",
-   "options": "Customer",
-   "reqd": 1,
-   "search_index": 1
+   "label": "Party Type",
+   "options": "Customer\nLead\nOpportunity\nProspect\nSupplier\nOther",
+   "reqd": 1
   },
   {
-   "fieldname": "visit_type",
+   "fieldname": "party",
+   "fieldtype": "Dynamic Link",
+   "label": "Party",
+   "options": "party_type"
+  },
+  {
+   "fieldname": "party_name",
+   "fieldtype": "Data",
+   "label": "Party Name",
+   "read_only_depends_on": "eval:doc.party_type != 'Prospect' && doc.party_type != 'Other'"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "lead",
+   "fieldtype": "Link",
+   "label": "Lead",
+   "options": "Lead"
+  },
+  {
+   "fieldname": "opportunity",
+   "fieldtype": "Link",
+   "label": "Opportunity",
+   "options": "Opportunity"
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "contact_person",
+   "fieldtype": "Data",
+   "label": "Contact Person"
+  },
+  {
+   "fieldname": "contact_mobile",
+   "fieldtype": "Data",
+   "label": "Contact Mobile"
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Small Text",
+   "label": "Address"
+  },
+  {
+   "fieldname": "territory",
+   "fieldtype": "Link",
+   "label": "Territory",
+   "options": "Territory"
+  },
+  {
+   "fieldname": "field_type",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Visit Type",
+   "label": "Field Type",
    "options": "Visit Type",
    "reqd": 1
   },
   {
-   "default": "Today",
-   "fieldname": "visit_date",
-   "fieldtype": "Date",
-   "label": "Visit Date",
-   "read_only": 1
+   "fieldname": "sales_person",
+   "fieldtype": "Link",
+   "label": "Sales Person",
+   "options": "Sales Person"
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee"
   },
   {
    "default": "__user",
-   "fieldname": "visited_by",
+   "fieldname": "user",
    "fieldtype": "Link",
-   "label": "Visited By",
+   "label": "User",
    "options": "User",
    "read_only": 1
   },
   {
-   "default": "Completed",
-   "fieldname": "status",
+   "fieldname": "field_visit_plan",
+   "fieldtype": "Link",
+   "label": "Field Visit Plan",
+   "options": "Field Visit Plan",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "visit_status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Status",
-   "options": "Planned\nChecked In\nChecked Out\nCompleted"
+   "label": "Visit Status",
+   "options": "Draft\nChecked In\nCompleted\nCancelled\nFailed Sync"
   },
   {
-   "fieldname": "gps_latitude",
-   "fieldtype": "Float",
-   "label": "GPS Latitude"
+   "fieldname": "visit_purpose",
+   "fieldtype": "Small Text",
+   "label": "Visit Purpose"
   },
   {
-   "fieldname": "gps_longitude",
-   "fieldtype": "Float",
-   "label": "GPS Longitude"
+   "fieldname": "visit_outcome",
+   "fieldtype": "Small Text",
+   "label": "Visit Outcome"
   },
   {
    "fieldname": "remarks",
@@ -82,35 +173,98 @@
    "label": "Remarks"
   },
   {
-   "fieldname": "attachment",
-   "fieldtype": "Attach",
-   "label": "Attachment"
-  },
-  {
-   "fieldname": "next_followup_date",
+   "fieldname": "next_follow_up_date",
    "fieldtype": "Date",
    "label": "Next Follow-Up Date"
   },
   {
-   "fieldname": "status_section",
+   "fieldname": "check_in_section",
    "fieldtype": "Section Break",
-   "label": "Status"
+   "label": "Check In"
   },
   {
-   "fieldname": "gps_section",
-   "fieldtype": "Section Break",
-   "label": "GPS Location"
+   "fieldname": "check_in_latitude",
+   "fieldtype": "Float",
+   "label": "Check In Latitude"
   },
   {
-   "fieldname": "details_section",
+   "fieldname": "check_in_longitude",
+   "fieldtype": "Float",
+   "label": "Check In Longitude"
+  },
+  {
+   "fieldname": "check_in_time",
+   "fieldtype": "Datetime",
+   "label": "Check In Time"
+  },
+  {
+   "fieldname": "check_in_address",
+   "fieldtype": "Small Text",
+   "label": "Check In Address"
+  },
+  {
+   "fieldname": "check_out_section",
    "fieldtype": "Section Break",
-   "label": "Visit Details"
+   "label": "Check Out"
+  },
+  {
+   "fieldname": "check_out_latitude",
+   "fieldtype": "Float",
+   "label": "Check Out Latitude"
+  },
+  {
+   "fieldname": "check_out_longitude",
+   "fieldtype": "Float",
+   "label": "Check Out Longitude"
+  },
+  {
+   "fieldname": "check_out_time",
+   "fieldtype": "Datetime",
+   "label": "Check Out Time"
+  },
+  {
+   "fieldname": "check_out_address",
+   "fieldtype": "Small Text",
+   "label": "Check Out Address"
+  },
+  {
+   "fieldname": "mobile_section",
+   "fieldtype": "Section Break",
+   "label": "Mobile"
+  },
+  {
+   "default": "0",
+   "fieldname": "created_from_mobile",
+   "fieldtype": "Check",
+   "label": "Created From Mobile"
+  },
+  {
+   "fieldname": "offline_record_id",
+   "fieldtype": "Data",
+   "label": "Offline Record ID",
+   "no_copy": 1,
+   "print_hide": 1,
+   "report_hide": 1
+  },
+  {
+   "default": "Pending",
+   "fieldname": "sync_status",
+   "fieldtype": "Select",
+   "label": "Sync Status",
+   "options": "Pending\nSynced\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sync_error",
+   "fieldtype": "Small Text",
+   "label": "Sync Error",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 20:27:44.288056",
+ "modified": "2026-06-10 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infintrix Fieldforce",
  "name": "Field Visit",
@@ -157,5 +311,5 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "customer"
+ "title_field": "party_name"
 }

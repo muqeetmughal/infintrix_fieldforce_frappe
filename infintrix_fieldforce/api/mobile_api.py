@@ -178,7 +178,7 @@ def get_dashboard_metrics():
     user = frappe.session.user
     today = frappe.utils.today()
 
-    today_visits = frappe.db.count("Field Visit", {"visited_by": user, "visit_date": today})
+    today_visits = frappe.db.count("Field Visit", {"user": user, "creation": (">=", today)})
     today_orders = frappe.db.count("Sales Order", {"modified_by": user, "transaction_date": today, "docstatus": 1})
 
     today_collections = frappe.db.sql("""
@@ -206,19 +206,27 @@ def submit_field_visit():
     data = json.loads(frappe.request.data or "{}")
 
     visit = frappe.new_doc("Field Visit")
-    visit.customer = data.get("customer")
-    visit.visit_type = data.get("visit_type")
-    visit.status = data.get("visit_status", "Checked In")
+    visit.party_type = data.get("party_type", "Customer")
+    visit.party = data.get("party") or data.get("customer")
+    visit.party_name = data.get("party_name", "")
+    visit.field_type = data.get("visit_type") or data.get("field_type")
+    visit.visit_status = data.get("visit_status", "Checked In")
+    visit.visit_purpose = data.get("visit_purpose", "")
     visit.remarks = data.get("remarks", "")
-    visit.gps_latitude = data.get("gps_latitude")
-    visit.gps_longitude = data.get("gps_longitude")
-    visit.next_followup_date = data.get("next_followup_date")
-    visit.attachment = data.get("attachment")
-    visit.visited_by = frappe.session.user
+    visit.check_in_latitude = data.get("gps_latitude") or data.get("check_in_latitude")
+    visit.check_in_longitude = data.get("gps_longitude") or data.get("check_in_longitude")
+    visit.check_in_time = data.get("check_in_time") or frappe.utils.now()
+    visit.check_in_address = data.get("check_in_address", "")
+    visit.next_follow_up_date = data.get("next_follow_up_date") or data.get("next_followup_date")
+    visit.sales_person = data.get("sales_person", "")
+    visit.employee = data.get("employee", "")
+    visit.created_from_mobile = 1
+    visit.offline_record_id = data.get("offline_record_id", "")
+    visit.sync_status = "Synced"
 
     visit.insert(ignore_permissions=False)
 
-    return {"name": visit.name, "customer": visit.customer, "visit_type": visit.visit_type}
+    return {"name": visit.name, "party_type": visit.party_type, "party": visit.party, "party_name": visit.party_name}
 
 
 @frappe.whitelist(allow_guest=False)
@@ -230,17 +238,23 @@ def update_field_visit():
         frappe.throw(_("visit_name is required"))
 
     visit = frappe.get_doc("Field Visit", visit_name)
-    visit.status = data.get("visit_status", "Completed")
+    visit.visit_status = data.get("visit_status", "Completed")
     visit.remarks = data.get("remarks") or visit.remarks
-    visit.next_followup_date = data.get("next_followup_date") or visit.next_followup_date
+    visit.visit_outcome = data.get("visit_outcome") or visit.visit_outcome
+    visit.next_follow_up_date = data.get("next_follow_up_date") or data.get("next_followup_date") or visit.next_follow_up_date
     if data.get("check_out_latitude"):
-        visit.gps_latitude = data.get("check_out_latitude")
+        visit.check_out_latitude = data.get("check_out_latitude")
     if data.get("check_out_longitude"):
-        visit.gps_longitude = data.get("check_out_longitude")
+        visit.check_out_longitude = data.get("check_out_longitude")
+    if data.get("check_out_time"):
+        visit.check_out_time = data.get("check_out_time")
+    else:
+        visit.check_out_time = frappe.utils.now()
+    visit.check_out_address = data.get("check_out_address", "")
 
     visit.save(ignore_permissions=False)
 
-    return {"name": visit.name, "customer": visit.customer, "status": visit.status}
+    return {"name": visit.name, "party_type": visit.party_type, "party": visit.party, "visit_status": visit.visit_status}
 
 
 @frappe.whitelist(allow_guest=False)
@@ -303,6 +317,195 @@ def submit_payment_entry():
     pe.insert(ignore_permissions=False)
 
     return {"name": pe.name, "party": pe.party, "paid_amount": pe.paid_amount}
+
+
+@frappe.whitelist(allow_guest=False)
+def get_scheduled_visits():
+    """Fetch Field Visit Plans assigned to the logged-in user (via sales_person or employee)."""
+    user = frappe.session.user
+    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    sales_person = frappe.db.get_value("Sales Person", {"user_id": user}, "name")
+    
+    filters = [["status", "not in", ["Cancelled"]]]
+    if employee:
+        filters.append(["employee", "=", employee])
+    if sales_person:
+        filters.append(["sales_person", "=", sales_person])
+    if not employee and not sales_person:
+        filters.append(["assigned_by", "=", user])
+    
+    plans = frappe.get_all(
+        "Field Visit Plan",
+        filters=filters,
+        fields=[
+            "name", "plan_date", "company", "sales_person", "employee",
+            "customer", "customer_name", "territory", "route", "field_type",
+            "priority", "planned_start_time", "planned_end_time",
+            "visit_purpose", "status", "actual_field_visit",
+            "assigned_by", "assigned_on", "remarks",
+        ],
+        order_by="planned_start_time asc",
+    )
+    return plans
+
+
+@frappe.whitelist(allow_guest=False)
+def get_today_scheduled_visits():
+    """Fetch today's Field Visit Plans assigned to the logged-in user."""
+    user = frappe.session.user
+    today = frappe.utils.today()
+    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    sales_person = frappe.db.get_value("Sales Person", {"user_id": user}, "name")
+    
+    filters = [
+        ["plan_date", "=", today],
+        ["status", "not in", ["Cancelled", "Completed"]],
+    ]
+    if employee:
+        filters.append(["employee", "=", employee])
+    if sales_person:
+        filters.append(["sales_person", "=", sales_person])
+    if not employee and not sales_person:
+        filters.append(["assigned_by", "=", user])
+    
+    plans = frappe.get_all(
+        "Field Visit Plan",
+        filters=filters,
+        fields=[
+            "name", "plan_date", "company", "sales_person", "employee",
+            "customer", "customer_name", "territory", "route", "field_type",
+            "priority", "planned_start_time", "planned_end_time",
+            "visit_purpose", "status", "actual_field_visit",
+            "assigned_by", "assigned_on", "remarks",
+        ],
+        order_by="planned_start_time asc",
+        limit_page_length=20,
+    )
+    return plans
+
+
+@frappe.whitelist(allow_guest=False)
+def create_field_visit_from_plan():
+    """Create a Field Visit from a Field Visit Plan, then update the plan status."""
+    data = json.loads(frappe.request.data or "{}")
+    plan_name = data.get("plan_name")
+    if not plan_name:
+        frappe.throw(_("plan_name is required"))
+    
+    plan = frappe.get_doc("Field Visit Plan", plan_name)
+    
+    visit = frappe.new_doc("Field Visit")
+    visit.party_type = plan.party_type
+    visit.party = plan.party
+    visit.party_name = plan.party_name
+    visit.customer = plan.customer
+    visit.lead = plan.lead
+    visit.opportunity = plan.opportunity
+    visit.supplier = plan.supplier
+    visit.contact_mobile = plan.contact_mobile
+    visit.address = plan.address
+    visit.territory = plan.territory
+    visit.field_type = plan.field_type or data.get("visit_type", "Scheduled Visit")
+    visit.sales_person = plan.sales_person
+    visit.employee = plan.employee
+    visit.visit_status = "Checked In"
+    visit.visit_purpose = plan.visit_purpose
+    visit.remarks = data.get("remarks", "")
+    visit.check_in_latitude = data.get("gps_latitude") or data.get("check_in_latitude")
+    visit.check_in_longitude = data.get("gps_longitude") or data.get("check_in_longitude")
+    visit.check_in_time = data.get("check_in_time") or frappe.utils.now()
+    visit.check_in_address = data.get("check_in_address", "")
+    visit.field_visit_plan = plan_name
+    visit.created_from_mobile = 1
+    visit.offline_record_id = data.get("offline_record_id", "")
+    visit.sync_status = "Synced"
+    
+    visit.insert(ignore_permissions=False)
+    
+    plan.db_set("status", "In Progress")
+    plan.db_set("actual_field_visit", visit.name)
+    
+    return {"name": visit.name, "plan_name": plan_name, "party_type": visit.party_type, "party": visit.party, "party_name": visit.party_name}
+
+
+@frappe.whitelist(allow_guest=False)
+def update_field_visit_plan_status():
+    """Update status of a Field Visit Plan."""
+    data = json.loads(frappe.request.data or "{}")
+    plan_name = data.get("plan_name")
+    if not plan_name:
+        frappe.throw(_("plan_name is required"))
+    new_status = data.get("status", "Completed")
+    actual_visit = data.get("actual_field_visit")
+    
+    plan = frappe.get_doc("Field Visit Plan", plan_name)
+    plan.db_set("status", new_status)
+    if actual_visit:
+        plan.db_set("actual_field_visit", actual_visit)
+    
+    return {"name": plan_name, "status": new_status}
+
+
+@frappe.whitelist(allow_guest=False)
+def reschedule_field_visit_plan():
+    """Reschedule a Field Visit Plan to a new date."""
+    data = json.loads(frappe.request.data or "{}")
+    plan_name = data.get("plan_name")
+    if not plan_name:
+        frappe.throw(_("plan_name is required"))
+    new_date = data.get("new_date")
+    new_start_time = data.get("new_start_time")
+    new_end_time = data.get("new_end_time")
+    
+    plan = frappe.get_doc("Field Visit Plan", plan_name)
+    if new_date:
+        plan.db_set("plan_date", new_date)
+    if new_start_time:
+        plan.db_set("planned_start_time", new_start_time)
+    if new_end_time:
+        plan.db_set("planned_end_time", new_end_time)
+    plan.db_set("status", "Rescheduled")
+    
+    return {"name": plan_name, "plan_date": new_date or plan.plan_date}
+
+
+@frappe.whitelist(allow_guest=False)
+def mark_visit_plan_missed():
+    """Mark a Field Visit Plan as Missed."""
+    data = json.loads(frappe.request.data or "{}")
+    plan_name = data.get("plan_name")
+    if not plan_name:
+        frappe.throw(_("plan_name is required"))
+    remarks = data.get("remarks", "")
+    
+    plan = frappe.get_doc("Field Visit Plan", plan_name)
+    plan.db_set("status", "Missed")
+    if remarks:
+        plan.db_set("remarks", remarks)
+    
+    return {"name": plan_name, "status": "Missed"}
+
+
+@frappe.whitelist(allow_guest=False)
+def get_territories():
+    territories = frappe.get_all(
+        "Territory",
+        filters=[["is_group", "=", 0]],
+        fields=["name", "territory_name"],
+        order_by="name asc",
+    )
+    return territories
+
+
+@frappe.whitelist(allow_guest=False)
+def get_customer_groups():
+    groups = frappe.get_all(
+        "Customer Group",
+        filters=[["is_group", "=", 0]],
+        fields=["name", "customer_group_name"],
+        order_by="name asc",
+    )
+    return groups
 
 
 @frappe.whitelist(allow_guest=False)
