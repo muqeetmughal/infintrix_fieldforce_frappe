@@ -926,6 +926,35 @@ def get_outstanding_amount(customer, company=None):
 
 
 @frappe.whitelist(allow_guest=False)
+def get_customer_ledger(customer, company=None):
+    if not company:
+        company = frappe.defaults.get_user_default("company")
+    if not company:
+        company = (
+            frappe.get_list("Company", limit=1, pluck="name")[0]
+            if frappe.get_list("Company", limit=1)
+            else None
+        )
+    if not company:
+        return []
+    entries = frappe.db.sql("""
+        SELECT
+            posting_date,
+            voucher_type,
+            voucher_no,
+            account,
+            COALESCE(debit, 0) AS debit,
+            COALESCE(credit, 0) AS credit,
+            against_voucher,
+            remarks
+        FROM `tabGL Entry`
+        WHERE party_type = 'Customer' AND party = %s AND company = %s AND is_cancelled = 0
+        ORDER BY posting_date DESC, creation DESC
+    """, (customer, company), as_dict=True)
+    return entries
+
+
+@frappe.whitelist(allow_guest=False)
 def get_outstanding_invoices(customer, company=None):
     if not company:
         company = frappe.defaults.get_user_default("company")
