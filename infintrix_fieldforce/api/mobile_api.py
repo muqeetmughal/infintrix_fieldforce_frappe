@@ -895,16 +895,22 @@ def get_private_file():
     file_url = data.get("file_url")
     if not file_url:
         frappe.throw(_("file_url is required"))
-    file_doc = frappe.db.get_value("File", {"file_url": file_url}, ["name", "file_name", "content_type"], as_dict=True)
-    if not file_doc:
-        frappe.throw(_("File not found"))
-    content = frappe.get_doc("File", file_doc["name"]).get_content()
+    file_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+    if not file_name:
+        file_name = frappe.db.get_value("File", {"file_url": file_url.lstrip("/")}, "name")
+    if not file_name:
+        frappe.throw(_("File not found for URL: {0}").format(file_url))
+    file_doc = frappe.get_doc("File", file_name)
+    raw = file_doc.get_content()
     import base64
-    encoded = base64.b64encode(content).decode("utf-8")
+    if isinstance(raw, str):
+        encoded = base64.b64encode(raw.encode("utf-8")).decode("utf-8")
+    else:
+        encoded = base64.b64encode(raw).decode("utf-8")
     content_type = file_doc.get("content_type") or "image/png"
     return {
         "data_uri": f"data:{content_type};base64,{encoded}",
-        "file_name": file_doc.get("file_name", ""),
+        "file_name": file_doc.file_name,
     }
 
 
