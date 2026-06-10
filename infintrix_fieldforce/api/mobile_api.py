@@ -129,7 +129,7 @@ def get_customer_detail(customer):
     recent_visits = frappe.get_all(
         "Field Visit",
         filters={"customer": customer},
-        fields=["name", "visit_type", "visit_date", "remarks", "gps_latitude", "gps_longitude"],
+        fields=["name", "field_type", "check_in_time", "remarks", "check_in_latitude", "check_in_longitude", "visit_status", "visit_outcome"],
         limit_page_length=10,
         order_by="creation desc",
     )
@@ -339,7 +339,10 @@ def get_scheduled_visits():
         filters=filters,
         fields=[
             "name", "plan_date", "company", "sales_person", "employee",
-            "customer", "customer_name", "territory", "route", "field_type",
+            "party_type", "party", "party_name",
+            "customer", "lead", "opportunity", "supplier",
+            "contact_mobile", "address",
+            "territory", "route", "field_type",
             "priority", "planned_start_time", "planned_end_time",
             "visit_purpose", "status", "actual_field_visit",
             "assigned_by", "assigned_on", "remarks",
@@ -373,7 +376,10 @@ def get_today_scheduled_visits():
         filters=filters,
         fields=[
             "name", "plan_date", "company", "sales_person", "employee",
-            "customer", "customer_name", "territory", "route", "field_type",
+            "party_type", "party", "party_name",
+            "customer", "lead", "opportunity", "supplier",
+            "contact_mobile", "address",
+            "territory", "route", "field_type",
             "priority", "planned_start_time", "planned_end_time",
             "visit_purpose", "status", "actual_field_visit",
             "assigned_by", "assigned_on", "remarks",
@@ -518,6 +524,173 @@ def get_user_info():
         "email": user_doc.email or "",
         "mobile_no": user_doc.mobile_no or "",
     }
+
+
+def _get_sales_person_for_user(user=None):
+    """Map user -> Employee -> Sales Person using standard DocTypes."""
+    user = user or frappe.session.user
+    sales_person = frappe.db.get_value("Sales Person", {"user_id": user}, "name")
+    if sales_person:
+        return sales_person
+    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    if employee:
+        sales_person = frappe.db.get_value("Sales Person", {"employee": employee}, "name")
+    return sales_person or ""
+
+
+@frappe.whitelist(allow_guest=False)
+def get_sales_person_mapping():
+    user = frappe.session.user
+    sales_person = _get_sales_person_for_user(user)
+    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    return {
+        "user": user,
+        "employee": employee or "",
+        "sales_person": sales_person or "",
+    }
+
+
+@frappe.whitelist(allow_guest=False)
+def get_leads(limit=100):
+    leads = frappe.get_all(
+        "Lead",
+        filters=[["status", "!=", "Converted"]],
+        fields=[
+            "name", "lead_name", "company_name", "status",
+            "mobile_no", "email_id", "territory", "source",
+            "website", "industry", "address", "city", "state",
+        ],
+        limit_page_length=limit,
+        order_by="lead_name asc",
+    )
+    return leads
+
+
+@frappe.whitelist(allow_guest=False)
+def get_opportunities(limit=100):
+    opportunities = frappe.get_all(
+        "Opportunity",
+        filters=[["status", "not in", ["Lost", "Closed"]]],
+        fields=[
+            "name", "opportunity_from", "party_name", "customer_name",
+            "status", "opportunity_type", "amount", "probability",
+            "expected_closing", "territory", "source", "contact_email", "contact_mobile",
+        ],
+        limit_page_length=limit,
+        order_by="creation desc",
+    )
+    return opportunities
+
+
+@frappe.whitelist(allow_guest=False)
+def get_suppliers(limit=100):
+    suppliers = frappe.get_all(
+        "Supplier",
+        filters=[["disabled", "=", 0]],
+        fields=[
+            "name", "supplier_name", "supplier_group",
+            "mobile_no", "email_id", "territory",
+        ],
+        limit_page_length=limit,
+        order_by="supplier_name asc",
+    )
+    return suppliers
+
+
+@frappe.whitelist(allow_guest=False)
+def get_visit_targets(limit=100):
+    """Fetch all possible visit targets: Customers, Leads, Opportunities, Prospects, Suppliers."""
+    customers = frappe.get_all(
+        "Customer",
+        filters=[["disabled", "=", 0]],
+        fields=["name", "customer_name", "territory", "mobile_no", "email_id"],
+        limit_page_length=limit,
+    )
+    leads = frappe.get_all(
+        "Lead",
+        filters=[["status", "!=", "Converted"]],
+        fields=["name", "lead_name", "territory", "mobile_no", "email_id"],
+        limit_page_length=limit,
+    )
+    opportunities = frappe.get_all(
+        "Opportunity",
+        filters=[["status", "not in", ["Lost", "Closed"]]],
+        fields=["name", "party_name", "territory", "contact_mobile", "contact_email"],
+        limit_page_length=limit,
+    )
+    suppliers = frappe.get_all(
+        "Supplier",
+        filters=[["disabled", "=", 0]],
+        fields=["name", "supplier_name", "territory", "mobile_no", "email_id"],
+        limit_page_length=limit,
+    )
+    return {
+        "customers": [
+            {
+                "party_type": "Customer",
+                "party": c["name"],
+                "party_name": c.get("customer_name") or c["name"],
+                "territory": c.get("territory", ""),
+                "mobile_no": c.get("mobile_no", ""),
+                "email_id": c.get("email_id", ""),
+            }
+            for c in customers
+        ],
+        "leads": [
+            {
+                "party_type": "Lead",
+                "party": l["name"],
+                "party_name": l.get("lead_name") or l["name"],
+                "territory": l.get("territory", ""),
+                "mobile_no": l.get("mobile_no", ""),
+                "email_id": l.get("email_id", ""),
+            }
+            for l in leads
+        ],
+        "opportunities": [
+            {
+                "party_type": "Opportunity",
+                "party": o["name"],
+                "party_name": o.get("party_name") or o["name"],
+                "territory": o.get("territory", ""),
+                "mobile_no": o.get("contact_mobile", ""),
+                "email_id": o.get("contact_email", ""),
+            }
+            for o in opportunities
+        ],
+        "suppliers": [
+            {
+                "party_type": "Supplier",
+                "party": s["name"],
+                "party_name": s.get("supplier_name") or s["name"],
+                "territory": s.get("territory", ""),
+                "mobile_no": s.get("mobile_no", ""),
+                "email_id": s.get("email_id", ""),
+            }
+            for s in suppliers
+        ],
+        "prospects": [],
+    }
+
+
+@frappe.whitelist(allow_guest=False)
+def get_outstanding_amount(customer, company=None):
+    if not company:
+        company = frappe.defaults.get_user_default("company")
+    if not company:
+        return {"outstanding_amount": 0, "credit_limit": 0}
+    result = frappe.db.sql("""
+        SELECT COALESCE(SUM(outstanding_amount), 0)
+        FROM `tabSales Invoice`
+        WHERE customer = %s AND docstatus = 1 AND company = %s AND outstanding_amount > 0
+    """, (customer, company))
+    outstanding = result[0][0] if result else 0
+    credit_limit = frappe.db.get_value(
+        "Customer Credit Limit",
+        {"parent": customer, "company": company},
+        "credit_limit"
+    ) or 0
+    return {"outstanding_amount": outstanding, "credit_limit": credit_limit}
 
 
 @frappe.whitelist(allow_guest=False)
