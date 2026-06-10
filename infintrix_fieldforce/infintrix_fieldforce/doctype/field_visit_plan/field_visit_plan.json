@@ -12,11 +12,7 @@
   "party_type",
   "party",
   "party_name",
-  "customer",
-  "lead",
-  "opportunity",
-  "supplier",
-  "contact_mobile",
+   "contact_mobile",
   "address",
   "territory",
   "route",
@@ -66,30 +62,6 @@
    "fieldtype": "Data",
    "label": "Party Name",
    "read_only_depends_on": "eval:doc.party_type != 'Prospect' && doc.party_type != 'Other'"
-  },
-  {
-   "fieldname": "customer",
-   "fieldtype": "Link",
-   "label": "Customer",
-   "options": "Customer"
-  },
-  {
-   "fieldname": "lead",
-   "fieldtype": "Link",
-   "label": "Lead",
-   "options": "Lead"
-  },
-  {
-   "fieldname": "opportunity",
-   "fieldtype": "Link",
-   "label": "Opportunity",
-   "options": "Opportunity"
-  },
-  {
-   "fieldname": "supplier",
-   "fieldtype": "Link",
-   "label": "Supplier",
-   "options": "Supplier"
   },
   {
    "fieldname": "contact_mobile",

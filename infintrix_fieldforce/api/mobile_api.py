@@ -33,6 +33,26 @@ def _resolve_image(file_url):
         return file_url
 
 
+def _get_net_outstanding(customer, company):
+    """Return net outstanding balance (invoice outstanding minus unallocated payments)."""
+    invoice_outstanding = frappe.db.sql("""
+        SELECT COALESCE(SUM(outstanding_amount), 0)
+        FROM `tabSales Invoice`
+        WHERE customer = %s AND docstatus = 1 AND company = %s AND outstanding_amount > 0
+    """, (customer, company))
+    invoice_total = invoice_outstanding[0][0] if invoice_outstanding else 0
+
+    payment_unallocated = frappe.db.sql("""
+        SELECT COALESCE(SUM(unallocated_amount), 0)
+        FROM `tabPayment Entry`
+        WHERE party = %s AND party_type = 'Customer' AND docstatus = 1
+          AND company = %s AND unallocated_amount > 0
+    """, (customer, company))
+    unallocated_total = payment_unallocated[0][0] if payment_unallocated else 0
+
+    return flt(invoice_total - unallocated_total)
+
+
 @frappe.whitelist(allow_guest=False)
 def login():
     user = frappe.session.user
@@ -89,12 +109,7 @@ def get_customers(territory=None, customer_group=None, limit=100):
         outstanding = 0
         credit_limit = 0
         if company:
-            result = frappe.db.sql("""
-                SELECT COALESCE(SUM(outstanding_amount), 0)
-                FROM `tabSales Invoice`
-                WHERE customer = %s AND docstatus = 1 AND company = %s AND outstanding_amount > 0
-            """, (c["name"], company))
-            outstanding = result[0][0] if result else 0
+            outstanding = _get_net_outstanding(c["name"], company)
 
             credit_limit = frappe.db.get_value(
                 "Customer Credit Limit",
@@ -129,12 +144,7 @@ def get_customer_detail(customer):
     credit_limit = 0
 
     if company:
-        result = frappe.db.sql("""
-            SELECT COALESCE(SUM(outstanding_amount), 0)
-            FROM `tabSales Invoice`
-            WHERE customer = %s AND docstatus = 1 AND company = %s AND outstanding_amount > 0
-        """, (customer, company))
-        outstanding = result[0][0] if result else 0
+        outstanding = _get_net_outstanding(customer, company)
 
         credit_limit = frappe.db.get_value(
             "Customer Credit Limit",
@@ -232,11 +242,17 @@ def get_dashboard_metrics():
         WHERE docstatus = 1 AND outstanding_amount > 0
     """)[0][0]
 
+    total_unallocated = frappe.db.sql("""
+        SELECT COALESCE(SUM(unallocated_amount), 0)
+        FROM `tabPayment Entry`
+        WHERE docstatus = 1 AND party_type = 'Customer' AND unallocated_amount > 0
+    """)[0][0]
+
     return {
         "today_visits_count": today_visits,
         "today_orders_count": today_orders,
         "today_collections_amount": today_collections,
-        "total_outstanding_amount": total_outstanding,
+        "total_outstanding_amount": flt(total_outstanding - total_unallocated),
     }
 
 
@@ -890,12 +906,7 @@ def get_outstanding_amount(customer, company=None):
         )
     if not company:
         return {"outstanding_amount": 0, "credit_limit": 0}
-    result = frappe.db.sql("""
-        SELECT COALESCE(SUM(outstanding_amount), 0)
-        FROM `tabSales Invoice`
-        WHERE customer = %s AND docstatus = 1 AND company = %s AND outstanding_amount > 0
-    """, (customer, company))
-    outstanding = result[0][0] if result else 0
+    outstanding = _get_net_outstanding(customer, company)
     credit_limit = frappe.db.get_value(
         "Customer Credit Limit",
         {"parent": customer, "company": company},

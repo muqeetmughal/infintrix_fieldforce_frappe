@@ -17,23 +17,18 @@ class FieldVisitPlan(Document):
 		self._sync_party_fields()
 
 	def _sync_party_fields(self):
-		if self.party_type == "Customer" and self.party:
-			self.customer = self.party
-			name = frappe.db.get_value("Customer", self.party, "customer_name")
-			if name:
-				self.party_name = name
-		elif self.party_type == "Lead" and self.party:
-			self.lead = self.party
-			name = frappe.db.get_value("Lead", self.party, "lead_name")
-			if name:
-				self.party_name = name
-		elif self.party_type == "Opportunity" and self.party:
-			self.opportunity = self.party
-			name = frappe.db.get_value("Opportunity", self.party, "opportunity_name")
-			if name:
-				self.party_name = name
-		elif self.party_type == "Supplier" and self.party:
-			self.supplier = self.party
-			name = frappe.db.get_value("Supplier", self.party, "supplier_name")
+		if not self.party or not self.party_type:
+			return
+
+		name_fields = {
+			"Customer": "customer_name",
+			"Lead": "lead_name",
+			"Opportunity": "opportunity_name",
+			"Supplier": "supplier_name",
+		}
+
+		name_field = name_fields.get(self.party_type)
+		if name_field:
+			name = frappe.db.get_value(self.party_type, self.party, name_field)
 			if name:
 				self.party_name = name
